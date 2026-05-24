@@ -1,0 +1,48 @@
+# {{ title }}
+
+## 基本信息
+- 日期：{{ date }}
+- 时长：{{ duration }}
+- 原始文件：{{ filename }}
+
+## 会议摘要
+{{ summary }}
+
+## 关键讨论点
+{% if key_points %}
+{% for kp in key_points %}
+{{ loop.index }}. **{{ kp.topic }}**{% if kp.importance == 'high' %} 【重要】{% endif %}
+   {{ kp.content }}
+{% endfor %}
+{% else %}
+_无_
+{% endif %}
+
+## 决策记录
+{% if decisions %}
+{% for d in decisions %}
+- [ ] {{ d.content }} — 提出人：{{ d.proposer or '未指定' }}
+{% endfor %}
+{% else %}
+_无_
+{% endif %}
+
+## 行动项
+{% if action_items %}
+{% for item in action_items %}
+- [ ] {{ item.content }} — 负责人：{{ item.assignee or '待指定' }} — 截止日期：{{ item.deadline or '待定' }}
+{% endfor %}
+{% else %}
+_无_
+{% endif %}
+
+## 标签
+{% if tags %}
+{{ tags | join(', ') }}
+{% else %}
+_无_
+{% endif %}
+
+---
+
+> 由 MeetingSum 自动生成

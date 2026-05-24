@@ -1,0 +1,16 @@
+{# Jinja2 context for DOCX document generation.
+
+Variables available:
+  - title: str
+  - date: str (YYYY-MM-DD)
+  - duration: str (HH:MM:SS)
+  - filename: str
+  - summary: str (200-300 words)
+  - key_points: list[dict] with topic, content, importance
+  - decisions: list[dict] with content, proposer
+  - action_items: list[dict] with content, assignee, deadline
+  - tags: list[str]
+
+This template is parsed by the DOCX generation service and applied
+via python-docx. The content structure mirrors the Markdown template.
+#}

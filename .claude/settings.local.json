@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(rm -f src/App.css)",
+      "Bash(mkdir -p src/components/Layout src/components/Uploader src/components/HistoryList src/components/SummaryViewer src/components/ExportPanel src/pages src/stores src/api src/types src/mocks/handlers src/utils)"
+    ]
+  }
+}
