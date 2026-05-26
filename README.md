@@ -48,6 +48,71 @@
 | 音视频 | FFmpeg（音频提取） |
 | 数据库 | SQLite（开发）/ PostgreSQL（生产） |
 
+## 系统架构
+
+```mermaid
+graph TB
+    subgraph User["用户"]
+        Browser["浏览器"]
+    end
+
+    subgraph Frontend["前端 (React 19 + Vite)"]
+        Uploader["文件上传"]
+        HistoryList["历史记录"]
+        SummaryViewer["摘要预览"]
+        ExportPanel["导出面板"]
+    end
+
+    subgraph Backend["后端 (FastAPI)"]
+        API["REST API 路由"]
+        UploadAPI["/api/v1/meetings/upload"]
+        TaskAPI["/api/v1/tasks/{id}/status"]
+        SummaryAPI["/api/v1/meetings/{id}"]
+        ExportAPI["/api/v1/meetings/{id}/export"]
+    end
+
+    subgraph Storage["数据存储"]
+        DB[("SQLite / PostgreSQL<br/>会议元数据")]
+        Files["文件存储<br/>uploads/ & outputs/"]
+    end
+
+    subgraph Queue["消息队列"]
+        Redis["Redis<br/>任务队列 + 进度缓存"]
+    end
+
+    subgraph Worker["Celery Worker"]
+        Pipeline["AI 处理管道"]
+        FFmpeg["FFmpeg<br/>音频提取"]
+        Whisper["OpenAI Whisper<br/>语音转文字"]
+        Diarizer["说话人分离<br/>Speaker Diarization"]
+        Claude["Claude API<br/>AI 智能摘要"]
+        Jinja2["Jinja2 模板<br/>文档渲染"]
+    end
+
+    Browser -->|"HTTP/WS"| API
+    API --> DB
+    API --> Files
+    API -->|"提交任务"| Redis
+    Redis -->|"消费任务"| Worker
+    Pipeline --> FFmpeg
+    FFmpeg --> Whisper
+    Whisper --> Diarizer
+    Diarizer --> Claude
+    Claude --> Jinja2
+    Jinja2 -->|"输出 .md / .docx"| Files
+    Worker -->|"更新进度"| Redis
+    Worker -->|"保存结果"| DB
+
+    style User fill:#e1f5fe
+    style Frontend fill:#fff3e0
+    style Backend fill:#e8f5e9
+    style Storage fill:#f3e5f5
+    style Queue fill:#fff9c4
+    style Worker fill:#fce4ec
+```
+
+**数据流：** 用户上传视频 → 前端通过 API 提交任务到 Redis 队列 → Celery Worker 消费任务 → FFmpeg 提取音频 → Whisper 转写 → 说话人分离 → Claude API 生成摘要 → Jinja2 渲染文档 → 结果写入文件和数据库
+
 ## 项目结构
 
 ```
