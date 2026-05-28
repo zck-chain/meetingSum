@@ -3,21 +3,8 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App'
 
-async function startApp() {
-  try {
-    const { worker } = await import('./mocks/browser')
-    await worker.start({
-      onUnhandledRequest: 'bypass',
-    })
-  } catch {
-    console.warn('MSW failed to start, using real API')
-  }
-
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <App />
-    </StrictMode>,
-  )
-}
-
-startApp()
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)

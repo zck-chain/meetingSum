@@ -48,8 +48,15 @@ export default function Home() {
   const { stage, progress, status: taskStatus, polling } = useTaskStore()
 
   useEffect(() => {
-    fetchMeetings({ page: 1, page_size: 5 })
+    fetchMeetings({ page: 1, page_size: 6 })
   }, [fetchMeetings])
+
+  // 任务完成后自动刷新会议列表
+  useEffect(() => {
+    if (!polling && (taskStatus === 'completed' || taskStatus === 'failed')) {
+      fetchMeetings({ page: 1, page_size: 6 })
+    }
+  }, [polling, taskStatus, fetchMeetings])
 
   const stageLabels: Record<string, string> = {
     extracting_audio: '提取音频',
@@ -66,7 +73,7 @@ export default function Home() {
 
       <FileUploader
         onUploadComplete={() => {
-          fetchMeetings({ page: 1, page_size: 5 })
+          fetchMeetings({ page: 1, page_size: 6 })
         }}
       />
 
@@ -119,7 +126,7 @@ export default function Home() {
         </div>
       ) : (
         <Row gutter={[16, 16]}>
-          {meetings.slice(0, 5).map((m) => {
+          {meetings.slice(0, 6).map((m) => {
             const cfg = statusConfig[m.status]
             return (
               <Col key={m.id} xs={24} sm={12} lg={8}>

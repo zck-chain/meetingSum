@@ -42,11 +42,11 @@
 | 层级 | 技术 |
 |------|------|
 | 前端 | React 19 + TypeScript + Vite + Ant Design + Zustand + Tailwind CSS |
-| 后端 | Python FastAPI + Celery + SQLAlchemy + Alembic |
-| AI | OpenAI Whisper（语音识别）+ Claude API（摘要生成） |
-| 中件间 | Redis（任务队列） |
+| 后端 | Java 17 + Spring Boot 3.3 + Spring Data JPA + H2 Database |
+| AI | OpenAI Whisper（语音识别）+ DeepSeek / Claude API（摘要生成） |
+| LLM 框架 | LangChain4j 0.35 |
 | 音视频 | FFmpeg（音频提取） |
-| 数据库 | SQLite（开发）/ PostgreSQL（生产） |
+| 数据库 | H2（文件模式，开发） |
 
 ## 系统架构
 
@@ -63,7 +63,7 @@ graph TB
         ExportPanel["导出面板"]
     end
 
-    subgraph Backend["后端 (FastAPI)"]
+    subgraph Backend["后端 (Spring Boot 3.3)"]
         API["REST API 路由"]
         UploadAPI["/api/v1/meetings/upload"]
         TaskAPI["/api/v1/tasks/{id}/status"]
@@ -72,134 +72,113 @@ graph TB
     end
 
     subgraph Storage["数据存储"]
-        DB[("SQLite / PostgreSQL<br/>会议元数据")]
+        DB[("H2 Database<br/>会议元数据")]
         Files["文件存储<br/>uploads/ & outputs/"]
     end
 
-    subgraph Queue["消息队列"]
-        Redis["Redis<br/>任务队列 + 进度缓存"]
-    end
-
-    subgraph Worker["Celery Worker"]
-        Pipeline["AI 处理管道"]
+    subgraph Pipeline["AI 处理管道 (Spring @Async)"]
         FFmpeg["FFmpeg<br/>音频提取"]
         Whisper["OpenAI Whisper<br/>语音转文字"]
         Diarizer["说话人分离<br/>Speaker Diarization"]
-        Claude["Claude API<br/>AI 智能摘要"]
-        Jinja2["Jinja2 模板<br/>文档渲染"]
+        LLM["DeepSeek / Claude API<br/>AI 智能摘要"]
+        Export["Apache POI<br/>文档渲染"]
     end
 
-    Browser -->|"HTTP/WS"| API
+    Browser -->|"HTTP"| API
     API --> DB
     API --> Files
-    API -->|"提交任务"| Redis
-    Redis -->|"消费任务"| Worker
+    API -->|"发布事件"| Pipeline
     Pipeline --> FFmpeg
     FFmpeg --> Whisper
     Whisper --> Diarizer
-    Diarizer --> Claude
-    Claude --> Jinja2
-    Jinja2 -->|"输出 .md / .docx"| Files
-    Worker -->|"更新进度"| Redis
-    Worker -->|"保存结果"| DB
+    Diarizer --> LLM
+    LLM --> Export
+    Export -->|"输出 .md / .docx"| Files
+    Pipeline -->|"更新进度"| DB
 
     style User fill:#e1f5fe
     style Frontend fill:#fff3e0
     style Backend fill:#e8f5e9
     style Storage fill:#f3e5f5
-    style Queue fill:#fff9c4
-    style Worker fill:#fce4ec
+    style Pipeline fill:#fce4ec
 ```
 
-**数据流：** 用户上传视频 → 前端通过 API 提交任务到 Redis 队列 → Celery Worker 消费任务 → FFmpeg 提取音频 → Whisper 转写 → 说话人分离 → Claude API 生成摘要 → Jinja2 渲染文档 → 结果写入文件和数据库
+**数据流：** 用户上传视频 → 前端通过 API 提交任务 → Spring @Async 异步处理 → FFmpeg 提取音频 → Whisper 转写 → 说话人分离 → DeepSeek/Claude API 生成摘要 → Apache POI 渲染文档 → 结果写入文件和数据库
 
 ## 项目结构
 
 ```
 meeting-summarizer/
-├── frontend/                # React 前端
+├── frontend/                    # React 前端
 │   ├── src/
-│   │   ├── components/      # UI 组件
-│   │   │   ├── Uploader/    # 文件上传
-│   │   │   ├── HistoryList/ # 历史记录
-│   │   │   ├── SummaryViewer/ # 摘要预览
-│   │   │   ├── ExportPanel/ # 导出面板
-│   │   │   └── Layout/      # 布局
-│   │   ├── pages/           # 页面（Home / History / Summary / Settings）
-│   │   ├── stores/          # Zustand 状态管理
-│   │   ├── api/             # API 请求封装
-│   │   ├── types/           # TS 类型
-│   │   └── utils/           # 工具函数
+│   │   ├── components/          # UI 组件
+│   │   │   ├── Uploader/        # 文件上传
+│   │   │   ├── HistoryList/     # 历史记录
+│   │   │   ├── SummaryViewer/   # 摘要预览
+│   │   │   ├── ExportPanel/     # 导出面板
+│   │   │   └── Layout/          # 布局
+│   │   ├── pages/               # 页面（Home / History / Summary / Settings）
+│   │   ├── stores/              # Zustand 状态管理
+│   │   ├── api/                 # API 请求封装
+│   │   ├── types/               # TS 类型
+│   │   └── utils/               # 工具函数
 │   └── package.json
-├── backend/                 # FastAPI 后端
+├── Java_backend/                # Spring Boot 后端（当前主力）
+│   ├── src/main/java/com/meetingsum/
+│   │   ├── config/              # 配置（AppProperties / CORS / Async）
+│   │   ├── controller/          # REST 控制器 + 全局异常处理
+│   │   ├── model/               # 实体 + DTO + 枚举
+│   │   ├── pipeline/            # AI 处理管道（音频提取→转写→分离→摘要→导出）
+│   │   ├── repository/          # JPA Repository
+│   │   ├── service/             # 业务逻辑层
+│   │   └── util/                # 工具类
+│   ├── src/main/resources/
+│   │   └── application.yml      # 应用配置
+│   └── pom.xml
+├── backend/                     # FastAPI 后端（旧版 Python 实现）
 │   ├── app/
-│   │   ├── api/             # REST API 路由
-│   │   ├── core/            # 配置 / 数据库 / 安全
-│   │   ├── models/          # SQLAlchemy 数据模型
-│   │   ├── services/        # 业务逻辑层
-│   │   ├── pipeline/        # AI 处理管道（音频提取→转写→分离→摘要）
-│   │   ├── templates/       # Jinja2 文档模板
-│   │   └── workers/         # Celery 后台任务
+│   │   ├── api/                 # REST API 路由
+│   │   ├── core/                # 配置 / 数据库 / 安全
+│   │   ├── models/              # SQLAlchemy 数据模型
+│   │   ├── services/            # 业务逻辑层
+│   │   ├── pipeline/            # AI 处理管道
+│   │   ├── templates/           # Jinja2 文档模板
+│   │   └── workers/             # Celery 后台任务
 │   └── requirements.txt
-├── docker-compose.yml       # 一键部署
-└── .env.example             # 环境变量模板
+└── README.md
 ```
 
 ## 快速开始
 
 ### 前置依赖
 
-- Python >= 3.11
-- Node.js >= 20
-- FFmpeg >= 5.0
-- Redis >= 7.0
-
-### Docker 一键部署（推荐）
-
-```bash
-# 1. 克隆项目
-git clone https://github.com/zck-chain/meetingSum.git
-cd meetingSum
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env，填入你的 ANTHROPIC_API_KEY
-
-# 3. 启动
-docker compose up -d
-
-# 4. 访问
-# 前端: http://localhost:3000
-# 后端 API: http://localhost:8000
-# API 文档: http://localhost:8000/docs
-```
+- Java >= 17（后端）
+- Maven >= 3.6（后端）
+- Python >= 3.11（Whisper 语音识别脚本）
+- Node.js >= 20（前端）
+- FFmpeg >= 5.0（音频提取 + Whisper 内部调用）
+- 可选：DeepSeek API Key 或 Anthropic API Key（AI 摘要）
 
 ### 手动开发环境
 
-**后端：**
+**后端（Spring Boot）：**
 
 ```bash
-cd backend
+cd Java_backend
 
-# 创建虚拟环境
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+# 1. 安装 Python 依赖（Whisper 语音识别）
+pip install openai-whisper
 
-# 安装依赖
-pip install -r requirements.txt
+# 2. 配置 application.yml
+#    - ffmpeg-path: 设为你的 FFmpeg 安装路径
+#    - deepseek-api-key: 填入你的 DeepSeek API Key
+#    编辑 src/main/resources/application.yml
 
-# 复制环境配置
-cp .env.example .env
-# 编辑 .env 填入 API Key
+# 3. 启动
+mvn spring-boot:run
 
-# 启动 Redis（如果没有运行中的 Redis）
-docker run -d -p 6379:6379 redis:7-alpine
-
-# 启动后端
-uvicorn app.main:app --reload --port 8000
-
-# 另开终端启动 Celery Worker
-celery -A app.workers.celery_app worker --loglevel=info
+# 后端 API: http://localhost:8080
+# H2 控制台: http://localhost:8080/h2-console
 ```
 
 **前端：**
@@ -216,6 +195,8 @@ npm run dev
 # 访问 http://localhost:5173
 ```
 
+> 旧版 Python FastAPI 后端在 `backend/` 目录下，保留作为参考。新的主力后端为 `Java_backend/`。
+
 ## API 概览
 
 | 方法 | 路径 | 说明 |
@@ -230,33 +211,43 @@ npm run dev
 
 ## 配置项
 
-在 `.env` 中配置：
+在 `Java_backend/src/main/resources/application.yml` 中配置：
 
-```ini
-# 语音识别
-ASR_PROVIDER=whisper_local     # whisper_local | aliyun | azure
-WHISPER_MODEL=medium           # tiny / base / small / medium / large-v3
-WHISPER_DEVICE=cpu             # cpu | cuda
+```yaml
+app:
+  # 语音识别
+  asr-provider: whisper_local
+  whisper-model: medium          # tiny / base / small / medium / large-v3
+  whisper-device: cpu            # cpu | cuda
 
-# LLM 摘要
-LLM_PROVIDER=claude            # claude | openai
-ANTHROPIC_API_KEY=sk-ant-xxx
-ANTHROPIC_MODEL=claude-sonnet-4-6
+  # LLM 摘要
+  llm-provider: deepseek         # deepseek | claude
+  deepseek-api-key: ${DEEPSEEK_API_KEY:}
+  deepseek-model: deepseek-chat
+  deepseek-base-url: https://api.deepseek.com
+  anthropic-api-key: ""
+  anthropic-model: claude-sonnet-4-6
 
-# 文件限制
-MAX_FILE_SIZE_MB=2048          # 最大 2GB
-MAX_VIDEO_DURATION_SECONDS=14400  # 最长 4 小时
-ALLOWED_FORMATS=mp4,mov,avi,mkv,mp3,wav,m4a,webm
+  # FFmpeg
+  ffmpeg-path: D:/work/ffmpeg/ffmpeg-8.1.1-essentials_build/bin/ffmpeg.exe
+  ffprobe-path: D:/work/ffmpeg/ffmpeg-8.1.1-essentials_build/bin/ffprobe.exe
+
+  # 文件限制
+  max-file-size-mb: 2048         # 最大 2GB
+  max-video-duration-seconds: 14400  # 最长 4 小时
+  allowed-formats: mp4,mov,avi,mkv,mp3,wav,m4a,webm
 ```
 
 ## 处理流程
 
 ```
 上传视频 → FFmpeg 提取音频 → Whisper 语音转文字
-    → 说话人分离 → Claude API 智能摘要 → Jinja2 渲染输出 .md / .docx
+    → 说话人分离 → DeepSeek / Claude API 智能摘要 → Apache POI 渲染输出 .md / .docx
 ```
 
-任务状态机：`pending → processing → completed / failed / cancelled`
+任务阶段：`extracting_audio → transcribing → summarizing → exporting`
+
+任务状态机：`pending → processing → completed / failed`
 
 ## License
 

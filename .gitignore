@@ -42,3 +42,17 @@ venv
 
 # Docker
 docker-compose.override.yml
+
+# Java
+target/
+*.class
+*.jar
+*.war
+*.db
+*.mv.db
+*.lock.db
+
+# Runtime data
+uploads/
+outputs/
+data/
