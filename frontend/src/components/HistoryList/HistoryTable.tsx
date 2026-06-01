@@ -1,14 +1,18 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Table, Tag, Input, Space, Modal, Button } from 'antd'
+import { Table, Tag, Input, Space, Modal, Button, Typography } from 'antd'
 import {
   SearchOutlined,
   DeleteOutlined,
   EyeOutlined,
+  RedoOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons'
 import type { Meeting, MeetingStatus } from '@/types/meeting'
 import { useMeetingStore } from '@/stores/meetingStore'
 import { formatDuration, formatFileSize } from '@/utils/format'
+
+const { Text } = Typography
 
 const statusConfig: Record<
   MeetingStatus,
@@ -27,6 +31,11 @@ export default function HistoryTable() {
     useMeetingStore()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [errorModal, setErrorModal] = useState<{
+    open: boolean
+    title: string
+    message: string
+  }>({ open: false, title: '', message: '' })
 
   const handleSearch = (value: string) => {
     setSearch(value)
@@ -42,6 +51,28 @@ export default function HistoryTable() {
       okType: 'danger',
       cancelText: '取消',
       onOk: () => deleteMeeting(id),
+    })
+  }
+
+  const handleRetry = (record: Meeting) => {
+    Modal.confirm({
+      title: '重新处理',
+      icon: <ExclamationCircleOutlined />,
+      content: `将重新上传并处理"${record.title || record.original_file}"。是否继续？`,
+      okText: '确认',
+      cancelText: '取消',
+      onOk: () => {
+        // 跳转回首页触发重新上传流程
+        navigate('/')
+      },
+    })
+  }
+
+  const handleShowError = (record: Meeting) => {
+    setErrorModal({
+      open: true,
+      title: record.title || record.original_file,
+      message: record.error_message || '处理过程中发生未知错误，请检查文件格式是否正确或稍后重试。',
     })
   }
 
@@ -81,9 +112,22 @@ export default function HistoryTable() {
       dataIndex: 'status',
       key: 'status',
       width: 100,
-      render: (status: MeetingStatus) => {
+      render: (status: MeetingStatus, record: Meeting) => {
         const cfg = statusConfig[status]
-        return <Tag color={cfg.color}>{cfg.label}</Tag>
+        const tag = <Tag color={cfg.color}>{cfg.label}</Tag>
+        // 失败状态可点击查看错误详情
+        if (status === 'failed' && record.error_message) {
+          return (
+            <span
+              className="cursor-pointer"
+              onClick={() => handleShowError(record)}
+              title="点击查看错误详情"
+            >
+              {tag}
+            </span>
+          )
+        }
+        return tag
       },
     },
     {
@@ -96,7 +140,7 @@ export default function HistoryTable() {
     {
       title: '操作',
       key: 'actions',
-      width: 120,
+      width: 160,
       render: (_: unknown, record: Meeting) => (
         <Space>
           {record.status === 'completed' && (
@@ -107,6 +151,16 @@ export default function HistoryTable() {
               onClick={() => navigate(`/summary/${record.id}`)}
             >
               查看
+            </Button>
+          )}
+          {record.status === 'failed' && (
+            <Button
+              type="link"
+              size="small"
+              icon={<RedoOutlined />}
+              onClick={() => handleRetry(record)}
+            >
+              重试
             </Button>
           )}
           <Button
@@ -152,6 +206,38 @@ export default function HistoryTable() {
           },
         }}
       />
+
+      {/* 错误详情弹窗 */}
+      <Modal
+        title={
+          <Space>
+            <ExclamationCircleOutlined className="text-red-500" />
+            <span>处理失败详情</span>
+          </Space>
+        }
+        open={errorModal.open}
+        onCancel={() => setErrorModal({ open: false, title: '', message: '' })}
+        footer={[
+          <Button
+            key="close"
+            onClick={() => setErrorModal({ open: false, title: '', message: '' })}
+          >
+            关闭
+          </Button>,
+        ]}
+        width={520}
+      >
+        <div className="mb-3">
+          <Text strong>会议：</Text>
+          <Text>{errorModal.title}</Text>
+        </div>
+        <div>
+          <Text strong>错误原因：</Text>
+          <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700 whitespace-pre-wrap">
+            {errorModal.message}
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

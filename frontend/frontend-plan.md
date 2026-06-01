@@ -181,20 +181,31 @@ frontend/
 | 首页只展示 5 个会议 | `meetings.slice(0, 5)` → `meetings.slice(0, 6)` | `src/pages/Home.tsx` |
 | 任务完成后卡片状态不更新 | 新增 `useEffect` 监听 `polling` 和 `taskStatus`，完成后自动 `fetchMeetings` | `src/pages/Home.tsx` |
 
+### 7.3 Phase 2 完成（2026-06-01）
+
+| 任务 | 变更 | 涉及文件 | 优先级 |
+|------|------|----------|--------|
+| WebSocket 实时进度 | 新建 `api/ws.ts` WebSocket 客户端（3s 超时自动降级轮询）；`taskStore.ts` 优先 WebSocket，不可用时降级轮询 | `api/ws.ts`（新建）、`stores/taskStore.ts`（修改） | P0 ✅ |
+| 说话人分离 UI | 新增 `SpeakerSegment`/`TranscriptData` 类型；`SummaryContent` 转录文本按说话人分段渲染，Avatar + 颜色标识 + 时间戳 | `types/meeting.ts`（修改）、`components/SummaryViewer/SummaryContent.tsx`（修改）、`pages/Summary.tsx`（修改） | P1 ✅ |
+| Word 导出完善 | `downloadExport` 解析 Content-Disposition 获取文件名（支持 RFC 5987）；`ExportActions` 使用真实文件名下载，增加 `meetingTitle` prop | `api/export.ts`（修改）、`components/ExportPanel/ExportActions.tsx`（修改）、`pages/Summary.tsx`（修改） | P1 ✅ |
+| 摘要模板自定义 | 新建 `TemplateEditor` 组件（TextArea 编辑器 + 变量 Tag 点击插入 + 默认模板预览）；`settingsStore` 持久化 `summaryTemplate`；`Settings` 页集成 | `components/Settings/TemplateEditor.tsx`（新建）、`types/settings.ts`（修改）、`stores/settingsStore.ts`（修改）、`pages/Settings.tsx`（修改） | P1 ✅ |
+| 错误处理与重试 | 新建全局 `ErrorBoundary` 组件；`HistoryTable` 失败任务增加「重试」按钮 + 错误详情 Modal（点击失败 Tag 查看）；`App.tsx` 包裹 ErrorBoundary | `components/ErrorBoundary.tsx`（新建）、`components/HistoryList/HistoryTable.tsx`（修改）、`App.tsx`（修改） | P1 ✅ |
+| 批量上传 | `FileUploader` 支持 `multiple={true}` 多文件选择/拖拽；新建 `BatchProgress` 组件展示批量进度面板（文件列表 + 状态 Tag + 进度条 + 折叠详情） | `components/Uploader/FileUploader.tsx`（修改）、`components/Uploader/BatchProgress.tsx`（新建） | P2 ✅ |
+
 ---
 
 ## 8. 后续开发计划
 
-### Phase 2：功能增强（预计 2-3 周）
+### Phase 2：功能增强 ✅ 已完成（2026-06-01）
 
-| 任务 | 描述 | 涉及文件（新建/修改） | 优先级 |
-|------|------|----------------------|--------|
-| WebSocket 实时进度 | 替换轮询为 WebSocket 连接 `ws://localhost:8000/ws/tasks/{task_id}`，监听 progress/complete/error 事件 | `stores/taskStore.ts`（修改）、`api/ws.ts`（新建） | P0 |
-| 说话人分离 UI | 在 SummaryContent 中增加说话人标识展示，转录文本按说话人分段显示 | `components/SummaryViewer/SummaryContent.tsx`（修改） | P1 |
-| Word 导出完善 | 补充 `.docx` 导出的真实模板渲染，确保格式完整 | `api/export.ts`（修改）、后端依赖 | P1 |
-| 摘要模板自定义 | Settings 页实现模板编辑器（Monaco Editor 或 TextArea），用户可自定义输出模板变量 | `pages/Settings.tsx`（修改）、`components/Settings/TemplateEditor.tsx`（新建） | P1 |
-| 错误处理与重试 | 失败任务的重试按钮、错误详情弹窗、全局错误边界 | `components/HistoryList/HistoryTable.tsx`（修改）、`components/ErrorBoundary.tsx`（新建） | P1 |
-| 批量上传 | FileUploader 支持 `multiple={true}`，多文件排队上传，批量处理状态面板 | `components/Uploader/FileUploader.tsx`（修改）、`components/Uploader/BatchProgress.tsx`（新建） | P2 |
+| 任务 | 描述 | 涉及文件（新建/修改） | 优先级 | 状态 |
+|------|------|----------------------|--------|------|
+| WebSocket 实时进度 | 替换轮询为 WebSocket 连接，监听 progress/complete/error 事件（后端未实现时自动降级） | `stores/taskStore.ts`（修改）、`api/ws.ts`（新建） | P0 | ✅ |
+| 说话人分离 UI | 在 SummaryContent 中增加说话人标识展示，转录文本按说话人分段显示 | `components/SummaryViewer/SummaryContent.tsx`（修改）、`types/meeting.ts`（修改） | P1 | ✅ |
+| Word 导出完善 | Content-Disposition 文件名解析，使用服务器建议文件名下载 | `api/export.ts`（修改）、`components/ExportPanel/ExportActions.tsx`（修改） | P1 | ✅ |
+| 摘要模板自定义 | Settings 页实现模板编辑器（TextArea + 变量 Tag），用户可自定义输出模板变量 | `pages/Settings.tsx`（修改）、`components/Settings/TemplateEditor.tsx`（新建）、`stores/settingsStore.ts`（修改） | P1 | ✅ |
+| 错误处理与重试 | 失败任务的重试按钮、错误详情弹窗、全局错误边界 | `components/HistoryList/HistoryTable.tsx`（修改）、`components/ErrorBoundary.tsx`（新建）、`App.tsx`（修改） | P1 | ✅ |
+| 批量上传 | FileUploader 支持 `multiple={true}`，多文件排队上传，批量处理状态面板 | `components/Uploader/FileUploader.tsx`（修改）、`components/Uploader/BatchProgress.tsx`（新建） | P2 | ✅ |
 
 ### Phase 3：体验优化（预计 1-2 周）
 
@@ -224,13 +235,13 @@ frontend/
 
 | doc.md 章节 | 内容 | 前端覆盖状态 |
 |-------------|------|-------------|
-| 2.1 核心功能 | 视频导入、语音识别、说话人分离、智能摘要、要点提取、文档导出、时间戳标注 | 上传 ✅ / ASR 状态展示 ✅ / 说话人 UI 预留 ⏳ / 摘要展示 ✅ / 要点提取展示 ✅ / 导出 ✅ / 时间戳 ⏳ |
+| 2.1 核心功能 | 视频导入、语音识别、说话人分离、智能摘要、要点提取、文档导出、时间戳标注 | 上传 ✅ / ASR 状态展示 ✅ / 说话人 UI ✅ / 摘要展示 ✅ / 要点提取展示 ✅ / 导出 ✅ / 时间戳 ⏳ |
 | 2.2 输出结构 | Markdown 结构化模板 | 完全对齐（基本信息/摘要/讨论点/决策/行动项） ✅ |
-| 2.3 辅助功能 | 历史记录、模板自定义、批量处理、导出格式选择 | 历史 ✅ / 模板 ⏳ / 批量 ⏳ / 导出格式 ✅ |
-| 5.1 REST API | 7 个接口 | 全部通过 MSW mock ✅ |
-| 5.3 WebSocket | 实时进度推送 | 当前使用轮询，WebSocket ⏳ |
+| 2.3 辅助功能 | 历史记录、模板自定义、批量处理、导出格式选择 | 历史 ✅ / 模板 ✅ / 批量 ✅ / 导出格式 ✅ |
+| 5.1 REST API | 7 个接口 | 全部对接完成 ✅ |
+| 5.3 WebSocket | 实时进度推送 | WebSocket 客户端已实现（后端未就绪时自动降级轮询） ✅ |
 | 8.1 Phase 1 MVP | 基础 Web UI（上传→等待→查看/下载） | ✅ 完成 |
-| 8.1 Phase 2 | 说话人分离、Word 导出、进度推送、模板、历史管理 | ⏳ 待开发 |
+| 8.1 Phase 2 | 说话人分离、Word 导出、进度推送、模板、历史管理 | ✅ 完成 |
 | 8.1 Phase 3 | Electron、拖拽增强、时间戳、国际化 | ⏳ 待开发 |
 | 8.1 Phase 4 | 认证、加密、分片上传、Docker | ⏳ 待开发 |
 

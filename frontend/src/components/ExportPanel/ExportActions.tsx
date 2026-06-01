@@ -13,14 +13,16 @@ import type { ExportFormat } from '@/types/settings'
 
 interface Props {
   meetingId: string
+  /** 会议标题，用于生成默认文件名 */
+  meetingTitle?: string
   onCopyMarkdown?: () => string
 }
 
-const formatOptions: { value: ExportFormat; label: string; icon: React.ReactNode }[] = [
-  { value: 'md', label: 'Markdown', icon: <FileMarkdownOutlined /> },
-  { value: 'docx', label: 'Word', icon: <FileWordOutlined /> },
-  { value: 'pdf', label: 'PDF', icon: <FilePdfOutlined /> },
-  { value: 'txt', label: '纯文本', icon: <FileTextOutlined /> },
+const formatOptions: { value: ExportFormat; label: string; icon: React.ReactNode; ext: string }[] = [
+  { value: 'md', label: 'Markdown', icon: <FileMarkdownOutlined />, ext: 'md' },
+  { value: 'docx', label: 'Word', icon: <FileWordOutlined />, ext: 'docx' },
+  { value: 'pdf', label: 'PDF', icon: <FilePdfOutlined />, ext: 'pdf' },
+  { value: 'txt', label: '纯文本', icon: <FileTextOutlined />, ext: 'txt' },
 ]
 
 export default function ExportActions({ meetingId, onCopyMarkdown }: Props) {
@@ -30,18 +32,18 @@ export default function ExportActions({ meetingId, onCopyMarkdown }: Props) {
   const handleDownload = async () => {
     setDownloading(true)
     try {
-      const blob = await downloadExport(meetingId, format)
+      const { blob, filename } = await downloadExport(meetingId, format)
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `meeting.${format}`
+      a.download = filename
       document.body.appendChild(a)
       a.click()
       a.remove()
       URL.revokeObjectURL(url)
-      message.success('下载成功')
+      message.success(`已下载：${filename}`)
     } catch {
-      message.error('下载失败')
+      message.error('下载失败，请稍后重试')
     } finally {
       setDownloading(false)
     }

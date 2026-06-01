@@ -6,6 +6,8 @@ interface SettingsState {
   settings: Settings
   setAsrProvider: (provider: AsrProvider) => void
   setLlmProvider: (provider: LlmProvider) => void
+  setSummaryTemplate: (template: string) => void
+  resetTemplate: () => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -14,6 +16,7 @@ export const useSettingsStore = create<SettingsState>()(
       settings: {
         asrProvider: 'whisper_local',
         llmProvider: 'claude',
+        summaryTemplate: '',
       },
 
       setAsrProvider: (provider) =>
@@ -21,6 +24,12 @@ export const useSettingsStore = create<SettingsState>()(
 
       setLlmProvider: (provider) =>
         set((s) => ({ settings: { ...s.settings, llmProvider: provider } })),
+
+      setSummaryTemplate: (template) =>
+        set((s) => ({ settings: { ...s.settings, summaryTemplate: template } })),
+
+      resetTemplate: () =>
+        set((s) => ({ settings: { ...s.settings, summaryTemplate: '' } })),
     }),
     {
       name: 'meetingsum-settings',

@@ -1,6 +1,6 @@
-import { Descriptions, Typography, Timeline, Checkbox, Table, Collapse, Tag } from 'antd'
-import { ClockCircleOutlined } from '@ant-design/icons'
-import type { SummaryData } from '@/types/meeting'
+import { Descriptions, Typography, Timeline, Checkbox, Table, Collapse, Tag, Avatar } from 'antd'
+import { ClockCircleOutlined, UserOutlined } from '@ant-design/icons'
+import type { SummaryData, SpeakerSegment } from '@/types/meeting'
 import type { Importance } from '@/types/meeting'
 import { formatDuration } from '@/utils/format'
 
@@ -18,12 +18,35 @@ const importanceLabels: Record<Importance, string> = {
   low: '参考',
 }
 
+/** 为每个说话人分配固定颜色 */
+const SPEAKER_COLORS = [
+  '#1677ff', '#52c41a', '#fa8c16', '#eb2f96',
+  '#722ed1', '#13c2c2', '#f5222d', '#2f54eb',
+]
+
+function getSpeakerColor(speaker: string): string {
+  let hash = 0
+  for (let i = 0; i < speaker.length; i++) {
+    hash = speaker.charCodeAt(i) + ((hash << 5) - hash)
+  }
+  return SPEAKER_COLORS[Math.abs(hash) % SPEAKER_COLORS.length]
+}
+
+function formatSpeakerLabel(label: string): string {
+  // 将 Speaker_A → 发言人 A，或直接返回已识别的名字
+  if (label.startsWith('Speaker_')) {
+    return `发言人 ${label.replace('Speaker_', '')}`
+  }
+  return label
+}
+
 interface Props {
   summary: SummaryData
   fileName: string
   durationSeconds: number
   createdAt: string
   transcriptText?: string | null
+  transcriptSegments?: SpeakerSegment[] | null
 }
 
 export default function SummaryContent({
@@ -32,7 +55,11 @@ export default function SummaryContent({
   durationSeconds,
   createdAt,
   transcriptText,
+  transcriptSegments,
 }: Props) {
+  const hasSegments = transcriptSegments && transcriptSegments.length > 0
+  const hasText = !!transcriptText
+
   return (
     <div>
       <Title level={3}>{summary.title}</Title>
@@ -130,13 +157,50 @@ export default function SummaryContent({
         </div>
       )}
 
+      {/* 说话人分离的转录文本 */}
       <Collapse
         className="mt-6"
         items={[
           {
             key: 'transcript',
-            label: '完整转录文本',
-            children: transcriptText ? (
+            label: hasSegments
+              ? `完整转录文本（${transcriptSegments!.length} 个分段，${new Set(transcriptSegments!.map(s => s.speaker)).size} 位发言人）`
+              : '完整转录文本',
+            children: hasSegments ? (
+              <div className="flex flex-col gap-3 max-h-96 overflow-y-auto">
+                {transcriptSegments!.map((seg, i) => {
+                  const color = getSpeakerColor(seg.speaker)
+                  return (
+                    <div key={i} className="flex gap-3 items-start">
+                      <Avatar
+                        size="small"
+                        style={{ backgroundColor: color, flexShrink: 0 }}
+                        icon={<UserOutlined />}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Text
+                            strong
+                            className="text-xs"
+                            style={{ color }}
+                          >
+                            {formatSpeakerLabel(seg.speaker_label || seg.speaker)}
+                          </Text>
+                          <Text type="secondary" className="text-xs">
+                            {formatDuration(Math.floor(seg.start_time))}
+                            {' — '}
+                            {formatDuration(Math.floor(seg.end_time))}
+                          </Text>
+                        </div>
+                        <Paragraph className="text-sm mb-0 whitespace-pre-wrap">
+                          {seg.text}
+                        </Paragraph>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : hasText ? (
               <Paragraph className="text-xs whitespace-pre-wrap">
                 {transcriptText}
               </Paragraph>

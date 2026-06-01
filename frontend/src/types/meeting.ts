@@ -33,6 +33,21 @@ export interface SummaryData {
   tags: string[]
 }
 
+/** 说话人分段 — 转录文本按说话人切分 */
+export interface SpeakerSegment {
+  speaker: string
+  speaker_label: string // e.g. "Speaker_A", "Speaker_B", or identified name
+  text: string
+  start_time: number // seconds from start
+  end_time: number   // seconds from start
+}
+
+/** 转录数据结构 — 支持纯文本或说话人分段两种格式 */
+export interface TranscriptData {
+  full_text: string | null
+  segments: SpeakerSegment[] | null
+}
+
 export interface Meeting {
   id: string
   title: string
@@ -42,6 +57,7 @@ export interface Meeting {
   file_size_bytes: number
   status: MeetingStatus
   transcript_text: string | null
+  transcript_data: TranscriptData | null
   summary_json: SummaryData | null
   error_message: string | null
   created_at: string

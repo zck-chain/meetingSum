@@ -103,6 +103,7 @@ export default function Summary() {
         durationSeconds={currentMeeting.duration_seconds}
         createdAt={currentMeeting.created_at}
         transcriptText={currentMeeting.transcript_text}
+        transcriptSegments={currentMeeting.transcript_data?.segments ?? null}
       />
 
       <div className="mt-8">

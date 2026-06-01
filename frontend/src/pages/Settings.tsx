@@ -5,9 +5,10 @@ import {
   FileTextOutlined,
 } from '@ant-design/icons'
 import { useSettingsStore } from '@/stores/settingsStore'
+import TemplateEditor from '@/components/Settings/TemplateEditor'
 import type { AsrProvider, LlmProvider } from '@/types/settings'
 
-const { Title, Text } = Typography
+const { Title } = Typography
 
 export default function Settings() {
   const { settings, setAsrProvider, setLlmProvider } = useSettingsStore()
@@ -97,9 +98,7 @@ export default function Settings() {
             摘要模板
           </Title>
         </div>
-        <Text type="secondary">
-          自定义摘要输出模板功能即将上线，敬请期待。
-        </Text>
+        <TemplateEditor />
       </Card>
 
       <Divider />
