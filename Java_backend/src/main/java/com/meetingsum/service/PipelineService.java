@@ -17,16 +17,16 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
 public class PipelineService {
 
     private static final Logger log = LoggerFactory.getLogger(PipelineService.class);
-    private static final DateTimeFormatter ISO_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final MeetingService meetingService;
     private final TaskService taskService;
@@ -123,7 +123,7 @@ public class PipelineService {
                     if (!fullTextBuilder.isEmpty()) fullTextBuilder.append(" ");
                     fullTextBuilder.append(seg.text());
                 }
-                meetingService.updateTranscript(meetingId, fullTextBuilder.toString());
+                meetingService.updateTranscript(meetingId, fixEncoding(fullTextBuilder.toString()));
             } catch (PipelineException e) {
                 throw e;
             } catch (Exception e) {
@@ -137,7 +137,7 @@ public class PipelineService {
                 if (!fullTextBuilder2.isEmpty()) fullTextBuilder2.append(" ");
                 fullTextBuilder2.append(seg.text());
             }
-            String fullText = fullTextBuilder2.toString();
+            String fullText = fixEncoding(fullTextBuilder2.toString());
 
             // ---- Stage 3: Summarization ----
             checkGlobalTimeout(pipeStartTime, globalTimeoutSec);
@@ -249,6 +249,56 @@ public class PipelineService {
             throw new PipelineException(ErrorCode.PIPELINE_TIMEOUT,
                     "Pipeline exceeded global timeout of " + globalTimeoutSec + "s (elapsed: " + elapsed + "s)");
         }
+    }
+
+    /**
+     * 修复编码乱码：当 Python 子进程输出 UTF-8 但 Java 用平台默认编码（如 GBK）读取时，
+     * 中文字符会出现 U+FFFD 替换字符。此方法尝试反向修复。
+     * <p>
+     * 策略：检测包含替换字符 → 用平台编码回编字节 → 用 UTF-8 重新解码
+     */
+    private String fixEncoding(String text) {
+        if (text == null || text.isBlank()) return text;
+        if (!text.contains("�")) return text; // 没有乱码标记，无需修复
+
+        log.warn("Detected encoding corruption (U+FFFD), attempting fix...");
+
+        // 策略1：用平台默认编码（如 GBK/CP936）回编，再用 UTF-8 解码
+        try {
+            Charset platformCharset = Charset.defaultCharset();
+            byte[] bytes = text.getBytes(platformCharset);
+            String fixed = new String(bytes, StandardCharsets.UTF_8);
+            if (!fixed.contains("�") && looksLikeValidText(fixed)) {
+                log.info("Encoding fixed via {} → UTF-8", platformCharset.name());
+                return fixed;
+            }
+        } catch (Exception ignored) {}
+
+        // 策略2：用 ISO-8859-1 回编（无损），再用 UTF-8 解码
+        try {
+            byte[] bytes = text.getBytes(StandardCharsets.ISO_8859_1);
+            String fixed = new String(bytes, StandardCharsets.UTF_8);
+            if (!fixed.contains("�") && looksLikeValidText(fixed)) {
+                log.info("Encoding fixed via ISO-8859-1 → UTF-8");
+                return fixed;
+            }
+        } catch (Exception ignored) {}
+
+        log.warn("Unable to fix encoding, returning original text");
+        return text;
+    }
+
+    /** 简单检测文本是否"看起来正常"（包含中文字符或合理的标点） */
+    private boolean looksLikeValidText(String text) {
+        if (text == null || text.isBlank()) return false;
+        // 检查是否包含中文字符（CJK统一表意文字范围）
+        long chineseCount = text.codePoints()
+                .filter(cp -> (cp >= 0x4E00 && cp <= 0x9FFF)
+                        || (cp >= 0x3400 && cp <= 0x4DBF)
+                        || (cp >= 0xF900 && cp <= 0xFAFF))
+                .count();
+        // 至少要有若干个中文字符才算有效修复
+        return chineseCount >= 5 || text.length() > 20;
     }
 
     public record PipelineStartEvent(String meetingId, String taskId) {}

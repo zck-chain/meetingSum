@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -143,7 +144,7 @@ public class Diarizer {
             throw new PipelineException(ErrorCode.DIARIZATION_FAILED, "pyannote diarization timed out");
         }
 
-        String stderr = new String(process.getErrorStream().readAllBytes());
+        String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         if (process.exitValue() != 0) {
             throw new PipelineException(ErrorCode.DIARIZATION_FAILED, "pyannote diarization failed: " + stderr);
         }
@@ -151,7 +152,7 @@ public class Diarizer {
             log.debug("pyannote stderr: {}", stderr);
         }
 
-        String stdout = new String(process.getInputStream().readAllBytes());
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         Map<String, List<Map<String, Object>>> result = objectMapper.readValue(stdout,
                 new TypeReference<>() {});
         List<Map<String, Object>> pyannoteSegments = result.get("segments");

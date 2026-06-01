@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -53,7 +54,7 @@ public class TranscriberService {
                     "Whisper transcription timed out after " + timeoutSeconds + "s");
         }
 
-        String stderr = new String(process.getErrorStream().readAllBytes());
+        String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         if (!stderr.isEmpty()) {
             log.warn("Whisper stderr: {}", stderr);
         }
@@ -63,7 +64,7 @@ public class TranscriberService {
                     "Whisper transcription failed: " + stderr);
         }
 
-        String stdout = new String(process.getInputStream().readAllBytes());
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         WhisperResult result;
         try {
             result = objectMapper.readValue(stdout, WhisperResult.class);

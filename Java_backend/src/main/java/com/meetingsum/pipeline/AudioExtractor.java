@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
@@ -49,7 +50,7 @@ public class AudioExtractor {
                     "FFmpeg audio extraction timed out after " + timeoutSeconds + "s");
         }
         if (process.exitValue() != 0) {
-            String stderr = new String(process.getInputStream().readAllBytes());
+            String stderr = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             throw new PipelineException(ErrorCode.AUDIO_EXTRACTION_FAILED,
                     "FFmpeg audio extraction failed: " + stderr);
         }
@@ -74,11 +75,11 @@ public class AudioExtractor {
             throw new PipelineException(ErrorCode.AUDIO_EXTRACTION_TIMEOUT, "ffprobe timed out");
         }
         if (process.exitValue() != 0) {
-            String stderr = new String(process.getErrorStream().readAllBytes());
+            String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
             throw new PipelineException(ErrorCode.AUDIO_EXTRACTION_FAILED, "ffprobe failed: " + stderr);
         }
 
-        String output = new String(process.getInputStream().readAllBytes()).trim();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
         return Double.parseDouble(output);
     }
 
