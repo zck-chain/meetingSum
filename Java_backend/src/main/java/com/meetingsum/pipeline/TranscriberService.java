@@ -3,6 +3,7 @@ package com.meetingsum.pipeline;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meetingsum.config.AppProperties;
+import com.meetingsum.model.enums.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -42,11 +43,14 @@ public class TranscriberService {
         log.info("Running Whisper transcription: {} --audio {} --model {}", python, audioPath, props.getWhisperModel());
 
         Process process = pb.start();
-        boolean finished = process.waitFor(30, TimeUnit.MINUTES);
+
+        int timeoutSeconds = props.getTimeout().getTranscriptionSeconds();
+        boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
 
         if (!finished) {
             process.destroyForcibly();
-            throw new RuntimeException("Whisper transcription timed out");
+            throw new PipelineException(ErrorCode.TRANSCRIPTION_TIMEOUT,
+                    "Whisper transcription timed out after " + timeoutSeconds + "s");
         }
 
         String stderr = new String(process.getErrorStream().readAllBytes());
@@ -55,27 +59,31 @@ public class TranscriberService {
         }
 
         if (process.exitValue() != 0) {
-            throw new RuntimeException("Whisper transcription failed: " + stderr);
+            throw new PipelineException(ErrorCode.TRANSCRIPTION_FAILED,
+                    "Whisper transcription failed: " + stderr);
         }
 
         String stdout = new String(process.getInputStream().readAllBytes());
-        WhisperResult result = objectMapper.readValue(stdout, WhisperResult.class);
+        WhisperResult result;
+        try {
+            result = objectMapper.readValue(stdout, WhisperResult.class);
+        } catch (IOException e) {
+            throw new PipelineException(ErrorCode.TRANSCRIPTION_INVALID_OUTPUT,
+                    "Failed to parse Whisper output as JSON", e);
+        }
         log.info("Transcription complete, {} segments, language: {}", result.segments().size(), result.language());
         return result;
     }
 
     private String findScriptPath() {
-        // Look for the script in project root first, then in working directory
         Path projectRoot = Path.of(props.getWhisperScriptPath());
         if (projectRoot.toFile().exists()) {
             return projectRoot.toString();
         }
-        // Try relative to classpath / working dir
         return props.getWhisperScriptPath();
     }
 
     private String findPython() {
-        // Try python3 first, then python
         String[] candidates = {"python3", "python"};
         for (String candidate : candidates) {
             try {

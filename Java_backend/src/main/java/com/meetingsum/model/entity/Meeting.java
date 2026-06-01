@@ -44,6 +44,9 @@ public class Meeting {
     @Column(name = "error_message", columnDefinition = "CLOB")
     private String errorMessage;
 
+    @Column(name = "custom_summary_template", columnDefinition = "CLOB")
+    private String customSummaryTemplate;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -87,6 +90,9 @@ public class Meeting {
 
     public String getErrorMessage() { return errorMessage; }
     public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+
+    public String getCustomSummaryTemplate() { return customSummaryTemplate; }
+    public void setCustomSummaryTemplate(String customSummaryTemplate) { this.customSummaryTemplate = customSummaryTemplate; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

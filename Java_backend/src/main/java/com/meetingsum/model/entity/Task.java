@@ -32,6 +32,12 @@ public class Task {
     @Column(name = "result_path", length = 500)
     private String resultPath;
 
+    @Column(name = "error_code", length = 40)
+    private String errorCode;
+
+    @Column(name = "error_message", columnDefinition = "CLOB")
+    private String errorMessage;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -59,6 +65,12 @@ public class Task {
 
     public String getResultPath() { return resultPath; }
     public void setResultPath(String resultPath) { this.resultPath = resultPath; }
+
+    public String getErrorCode() { return errorCode; }
+    public void setErrorCode(String errorCode) { this.errorCode = errorCode; }
+
+    public String getErrorMessage() { return errorMessage; }
+    public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

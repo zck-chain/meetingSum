@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.meetingsum.config.AppProperties;
 import com.meetingsum.model.dto.SummaryData;
+import com.meetingsum.model.enums.ErrorCode;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
@@ -51,15 +52,32 @@ public class SummarizerService {
     private final AppProperties props;
     private final ObjectMapper objectMapper;
 
+    /** 当前调用使用的模板（可能来自三级配置的任意一级） */
+    private volatile String currentTemplate;
+
     public SummarizerService(AppProperties props, ObjectMapper objectMapper) {
         this.props = props;
         this.objectMapper = objectMapper;
     }
 
     public SummaryData summarize(String transcriptText) {
+        return summarize(transcriptText, null);
+    }
+
+    /**
+     * 使用三级优先级解析 System Prompt：
+     * 1. 会议级自定义模板（customTemplate 参数）
+     * 2. YAML 全局配置（app.summary-template）
+     * 3. 硬编码默认值（SYSTEM_PROMPT）
+     */
+    public SummaryData summarize(String transcriptText, String customTemplate) {
         if (transcriptText == null || transcriptText.isBlank()) {
             throw new IllegalArgumentException("Transcript text is empty");
         }
+
+        this.currentTemplate = resolveTemplate(customTemplate);
+        log.debug("Using summary template (first 80 chars): {}",
+                currentTemplate.length() > 80 ? currentTemplate.substring(0, 80) + "..." : currentTemplate);
 
         List<String> chunks = chunkText(transcriptText);
 
@@ -85,6 +103,19 @@ public class SummarizerService {
         return parseSummaryJson(raw);
     }
 
+    /**
+     * 三级模板解析：会议级 > YAML 配置 > 硬编码默认值
+     */
+    String resolveTemplate(String customTemplate) {
+        if (customTemplate != null && !customTemplate.isBlank()) {
+            return customTemplate;
+        }
+        if (props.getSummaryTemplate() != null && !props.getSummaryTemplate().isBlank()) {
+            return props.getSummaryTemplate();
+        }
+        return SYSTEM_PROMPT;
+    }
+
     String callLlm(String userPrompt, int maxTokens) {
         if ("claude".equalsIgnoreCase(props.getLlmProvider())) {
             return callClaude(userPrompt, maxTokens);
@@ -96,38 +127,48 @@ public class SummarizerService {
     }
 
     private String callClaude(String userPrompt, int maxTokens) {
+        int timeoutSeconds = props.getTimeout().getSummarizationSeconds();
         AnthropicChatModel model = AnthropicChatModel.builder()
                 .apiKey(props.getAnthropicApiKey())
                 .modelName(props.getAnthropicModel())
                 .maxTokens(maxTokens)
-                .timeout(Duration.ofSeconds(120))
+                .timeout(Duration.ofSeconds(timeoutSeconds))
                 .build();
 
-        var response = model.generate(
-                new SystemMessage(SYSTEM_PROMPT),
-                new UserMessage(userPrompt)
-        );
-        String text = response.content().text();
-        log.debug("Claude response length: {}", text.length());
-        return text;
+        try {
+            var response = model.generate(
+                    new SystemMessage(currentTemplate != null ? currentTemplate : SYSTEM_PROMPT),
+                    new UserMessage(userPrompt)
+            );
+            String text = response.content().text();
+            log.debug("Claude response length: {}", text.length());
+            return text;
+        } catch (Exception e) {
+            throw new PipelineException(ErrorCode.LLM_API_ERROR, "Claude API call failed: " + e.getMessage(), e);
+        }
     }
 
     private String callDeepSeek(String userPrompt, int maxTokens) {
+        int timeoutSeconds = props.getTimeout().getSummarizationSeconds();
         OpenAiChatModel model = OpenAiChatModel.builder()
                 .apiKey(props.getDeepseekApiKey())
                 .modelName(props.getDeepseekModel())
                 .baseUrl(props.getDeepseekBaseUrl())
                 .maxTokens(maxTokens)
-                .timeout(Duration.ofSeconds(120))
+                .timeout(Duration.ofSeconds(timeoutSeconds))
                 .build();
 
-        var response = model.generate(
-                new SystemMessage(SYSTEM_PROMPT),
-                new UserMessage(userPrompt)
-        );
-        String text = response.content().text();
-        log.debug("DeepSeek response length: {}", text.length());
-        return text;
+        try {
+            var response = model.generate(
+                    new SystemMessage(currentTemplate != null ? currentTemplate : SYSTEM_PROMPT),
+                    new UserMessage(userPrompt)
+            );
+            String text = response.content().text();
+            log.debug("DeepSeek response length: {}", text.length());
+            return text;
+        } catch (Exception e) {
+            throw new PipelineException(ErrorCode.LLM_API_ERROR, "DeepSeek API call failed: " + e.getMessage(), e);
+        }
     }
 
     SummaryData parseSummaryJson(String raw) {
@@ -152,7 +193,8 @@ public class SummarizerService {
             return objectMapper.readValue(text, SummaryData.class);
         } catch (JsonProcessingException e) {
             log.error("Failed to parse summary JSON: {}", text);
-            throw new RuntimeException("Failed to parse LLM response as JSON", e);
+            throw new PipelineException(ErrorCode.LLM_INVALID_RESPONSE,
+                    "Failed to parse LLM response as JSON", e);
         }
     }
 

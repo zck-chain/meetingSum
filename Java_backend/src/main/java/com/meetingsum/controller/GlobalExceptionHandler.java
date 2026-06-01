@@ -1,5 +1,6 @@
 package com.meetingsum.controller;
 
+import com.meetingsum.pipeline.PipelineException;
 import com.meetingsum.service.MeetingService.MeetingNotFoundException;
 import com.meetingsum.service.TaskService.TaskNotFoundException;
 import org.slf4j.Logger;
@@ -32,6 +33,16 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handlePayloadTooLarge(PayloadTooLargeException ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(Map.of("detail", ex.getMessage()));
+    }
+
+    @ExceptionHandler(PipelineException.class)
+    public ResponseEntity<Map<String, String>> handlePipelineException(PipelineException ex) {
+        log.error("Pipeline error [{}]: {}", ex.getErrorCode().getCode(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of(
+                        "detail", ex.getMessage(),
+                        "error_code", ex.getErrorCode().getCode()
+                ));
     }
 
     @ExceptionHandler(Exception.class)

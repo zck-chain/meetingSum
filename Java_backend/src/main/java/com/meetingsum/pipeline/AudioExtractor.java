@@ -1,6 +1,7 @@
 package com.meetingsum.pipeline;
 
 import com.meetingsum.config.AppProperties;
+import com.meetingsum.model.enums.ErrorCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -21,7 +22,6 @@ public class AudioExtractor {
     }
 
     public String extractAudio(String inputPath, String outputDir) throws IOException, InterruptedException {
-        Path inputFile = Path.of(inputPath);
         Path outputDirPath = Path.of(outputDir);
         outputDirPath.toFile().mkdirs();
 
@@ -39,15 +39,19 @@ public class AudioExtractor {
         );
         pb.redirectErrorStream(true);
         Process process = pb.start();
-        boolean finished = process.waitFor(30, TimeUnit.MINUTES);
+
+        int timeoutSeconds = props.getTimeout().getAudioExtractionSeconds();
+        boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
 
         if (!finished) {
             process.destroyForcibly();
-            throw new RuntimeException("FFmpeg audio extraction timed out");
+            throw new PipelineException(ErrorCode.AUDIO_EXTRACTION_TIMEOUT,
+                    "FFmpeg audio extraction timed out after " + timeoutSeconds + "s");
         }
         if (process.exitValue() != 0) {
             String stderr = new String(process.getInputStream().readAllBytes());
-            throw new RuntimeException("FFmpeg audio extraction failed: " + stderr);
+            throw new PipelineException(ErrorCode.AUDIO_EXTRACTION_FAILED,
+                    "FFmpeg audio extraction failed: " + stderr);
         }
 
         log.info("Audio extracted to {}", outputPath);
@@ -67,11 +71,11 @@ public class AudioExtractor {
 
         if (!finished) {
             process.destroyForcibly();
-            throw new RuntimeException("ffprobe timed out");
+            throw new PipelineException(ErrorCode.AUDIO_EXTRACTION_TIMEOUT, "ffprobe timed out");
         }
         if (process.exitValue() != 0) {
             String stderr = new String(process.getErrorStream().readAllBytes());
-            throw new RuntimeException("ffprobe failed: " + stderr);
+            throw new PipelineException(ErrorCode.AUDIO_EXTRACTION_FAILED, "ffprobe failed: " + stderr);
         }
 
         String output = new String(process.getInputStream().readAllBytes()).trim();

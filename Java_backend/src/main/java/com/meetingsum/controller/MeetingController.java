@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/meetings")
@@ -86,5 +87,14 @@ public class MeetingController {
     public DeleteResponse deleteMeeting(@PathVariable String meetingId) {
         meetingService.deleteMeeting(meetingId);
         return new DeleteResponse("deleted");
+    }
+
+    @PutMapping("/{meetingId}/template")
+    public ResponseEntity<Void> updateSummaryTemplate(
+            @PathVariable String meetingId,
+            @RequestBody Map<String, String> body) {
+        String template = body.get("template");
+        meetingService.updateSummaryTemplate(meetingId, template);
+        return ResponseEntity.ok().build();
     }
 }

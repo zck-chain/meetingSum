@@ -2,28 +2,31 @@ package com.meetingsum.service;
 
 import com.meetingsum.config.AppProperties;
 import com.meetingsum.model.dto.SummaryData;
+import com.meetingsum.model.dto.TaskStatusResponse;
 import com.meetingsum.model.entity.Meeting;
+import com.meetingsum.model.enums.ErrorCode;
 import com.meetingsum.model.enums.MeetingStatus;
 import com.meetingsum.model.enums.TaskStage;
 import com.meetingsum.model.enums.TaskStatus;
 import com.meetingsum.pipeline.*;
 import com.meetingsum.pipeline.TranscriberService.WhisperResult;
+import com.meetingsum.websocket.WebSocketSessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
 public class PipelineService {
 
     private static final Logger log = LoggerFactory.getLogger(PipelineService.class);
+    private static final DateTimeFormatter ISO_FORMAT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
     private final MeetingService meetingService;
     private final TaskService taskService;
@@ -34,12 +37,13 @@ public class PipelineService {
     private final Diarizer diarizer;
     private final SummarizerService summarizerService;
     private final ExportService exportService;
+    private final WebSocketSessionManager wsSessionManager;
 
     public PipelineService(MeetingService meetingService, TaskService taskService,
                            FileStorageService fileStorageService, AppProperties props,
                            AudioExtractor audioExtractor, TranscriberService transcriberService,
                            Diarizer diarizer, SummarizerService summarizerService,
-                           ExportService exportService) {
+                           ExportService exportService, WebSocketSessionManager wsSessionManager) {
         this.meetingService = meetingService;
         this.taskService = taskService;
         this.fileStorageService = fileStorageService;
@@ -49,6 +53,7 @@ public class PipelineService {
         this.diarizer = diarizer;
         this.summarizerService = summarizerService;
         this.exportService = exportService;
+        this.wsSessionManager = wsSessionManager;
     }
 
     @Async("pipelineExecutor")
@@ -61,6 +66,8 @@ public class PipelineService {
 
     public void runPipeline(String meetingId, String taskId) {
         log.info("Starting pipeline for meeting {} task {}", meetingId, taskId);
+        long pipeStartTime = System.currentTimeMillis();
+        int globalTimeoutSec = props.getTimeout().getGlobalSeconds();
 
         try {
             // Mark processing
@@ -70,61 +77,144 @@ public class PipelineService {
             Meeting meeting = meetingService.findByIdOrThrow(meetingId);
             String inputPath = meeting.getOriginalFile();
             if (inputPath == null || !Files.exists(Path.of(inputPath))) {
-                throw new IllegalStateException("Input file not found: " + inputPath);
+                throw new PipelineException(ErrorCode.AUDIO_EXTRACTION_FAILED,
+                        "Input file not found: " + inputPath);
             }
 
             String meetingDir = Path.of(props.getOutputDir(), meetingId).toString();
             Files.createDirectories(Path.of(meetingDir));
 
-            // Stage 1: Audio extraction
+            // ---- Stage 1: Audio extraction ----
+            checkGlobalTimeout(pipeStartTime, globalTimeoutSec);
             log.info("Stage 1/4: Extracting audio");
             emitProgress(taskId, TaskStage.EXTRACTING_AUDIO, 0);
-            String audioPath = audioExtractor.extractAudio(inputPath, meetingDir);
-            double duration = audioExtractor.getMediaDuration(inputPath);
-            meetingService.updateDuration(meetingId, (int) duration);
+            String audioPath;
+            try {
+                audioPath = audioExtractor.extractAudio(inputPath, meetingDir);
+                double duration = audioExtractor.getMediaDuration(inputPath);
+                meetingService.updateDuration(meetingId, (int) duration);
+            } catch (PipelineException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new PipelineException(ErrorCode.AUDIO_EXTRACTION_FAILED, e.getMessage(), e);
+            }
             emitProgress(taskId, TaskStage.EXTRACTING_AUDIO, 100);
 
-            // Stage 2: Transcription
+            // ---- Stage 2: Transcription ----
+            checkGlobalTimeout(pipeStartTime, globalTimeoutSec);
             log.info("Stage 2/4: Transcribing");
             emitProgress(taskId, TaskStage.TRANSCRIBING, 0);
-            WhisperResult transcription = transcriberService.transcribe(audioPath);
-            List<TranscriberService.WhisperResult.Segment> diarizedSegments = diarizer.assignSpeakers(transcription.segments());
+            WhisperResult transcription;
+            List<TranscriberService.WhisperResult.Segment> diarizedSegments;
+            try {
+                transcription = transcriberService.transcribe(audioPath);
 
-            // Rebuild transcription with diarized segments
-            StringBuilder fullTextBuilder = new StringBuilder();
-            for (var seg : diarizedSegments) {
-                if (!fullTextBuilder.isEmpty()) fullTextBuilder.append(" ");
-                fullTextBuilder.append(seg.text());
+                // Diarization — try pyannote (with audio path) first, fall back to heuristic
+                try {
+                    diarizedSegments = diarizer.assignSpeakersWithAudio(transcription.segments(), audioPath);
+                } catch (Exception e) {
+                    log.warn("Diarization failed, using default speaker assignment: {}", e.getMessage());
+                    diarizedSegments = diarizer.assignSpeakers(transcription.segments());
+                }
+
+                // Rebuild transcription text from diarized segments
+                StringBuilder fullTextBuilder = new StringBuilder();
+                for (var seg : diarizedSegments) {
+                    if (!fullTextBuilder.isEmpty()) fullTextBuilder.append(" ");
+                    fullTextBuilder.append(seg.text());
+                }
+                meetingService.updateTranscript(meetingId, fullTextBuilder.toString());
+            } catch (PipelineException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new PipelineException(ErrorCode.TRANSCRIPTION_FAILED, e.getMessage(), e);
             }
-            meetingService.updateTranscript(meetingId, fullTextBuilder.toString());
             emitProgress(taskId, TaskStage.TRANSCRIBING, 100);
 
-            // Stage 3: Summarization
+            // Rebuild full text again for summarization (same logic)
+            StringBuilder fullTextBuilder2 = new StringBuilder();
+            for (var seg : diarizedSegments) {
+                if (!fullTextBuilder2.isEmpty()) fullTextBuilder2.append(" ");
+                fullTextBuilder2.append(seg.text());
+            }
+            String fullText = fullTextBuilder2.toString();
+
+            // ---- Stage 3: Summarization ----
+            checkGlobalTimeout(pipeStartTime, globalTimeoutSec);
             log.info("Stage 3/4: Summarizing");
             emitProgress(taskId, TaskStage.SUMMARIZING, 0);
-            SummaryData summary = summarizerService.summarize(fullTextBuilder.toString());
-            meetingService.updateSummary(meetingId, summary);
+            SummaryData summary;
+            try {
+                // Refresh meeting to get latest data including custom template
+                Meeting refreshedMeeting = meetingService.findByIdOrThrow(meetingId);
+                String customTemplate = refreshedMeeting.getCustomSummaryTemplate();
+                summary = summarizerService.summarize(fullText, customTemplate);
+                meetingService.updateSummary(meetingId, summary);
+            } catch (PipelineException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new PipelineException(ErrorCode.LLM_API_ERROR, e.getMessage(), e);
+            }
             emitProgress(taskId, TaskStage.SUMMARIZING, 100);
 
-            // Stage 4: Export
+            // ---- Stage 4: Export ----
+            checkGlobalTimeout(pipeStartTime, globalTimeoutSec);
             log.info("Stage 4/4: Exporting documents");
             emitProgress(taskId, TaskStage.EXPORTING, 0);
-            exportService.exportAll(meeting, summary, transcription, meetingDir);
+            try {
+                exportService.exportAll(meeting, summary, transcription, meetingDir);
+            } catch (Exception e) {
+                throw new PipelineException(ErrorCode.EXPORT_FAILED, e.getMessage(), e);
+            }
             emitProgress(taskId, TaskStage.EXPORTING, 100);
 
-            // Mark completed
+            // ---- Success ----
             taskService.markCompleted(taskId);
             meetingService.updateStatus(meetingId, MeetingStatus.COMPLETED);
-            log.info("Pipeline completed for meeting {}", meetingId);
 
-        } catch (Exception e) {
-            log.error("Pipeline failed for meeting {}: {}", meetingId, e.getMessage());
-            taskService.markFailed(taskId, e.getMessage());
+            // Send WebSocket completed event
+            try {
+                com.meetingsum.model.entity.Task completedTask = taskService.findByIdOrThrow(taskId);
+                TaskStatusResponse taskResponse = taskService.getTaskStatus(taskId);
+                wsSessionManager.sendCompleted(taskId, taskResponse);
+            } catch (Exception wsEx) {
+                log.debug("WebSocket completed notification failed (non-critical): {}", wsEx.getMessage());
+            }
+
+            long elapsed = (System.currentTimeMillis() - pipeStartTime) / 1000;
+            log.info("Pipeline completed for meeting {} in {}s", meetingId, elapsed);
+
+        } catch (PipelineException e) {
+            log.error("Pipeline failed for meeting {}: [{}] {}", meetingId, e.getErrorCode().getCode(), e.getMessage());
+            taskService.markFailed(taskId, e.getMessage(), e.getErrorCode());
             meetingService.updateStatus(meetingId, MeetingStatus.FAILED);
             try {
                 Meeting m = meetingService.findByIdOrThrow(meetingId);
                 m.setErrorMessage(e.getMessage());
             } catch (Exception ignored) {}
+
+            // Send WebSocket failed event
+            try {
+                wsSessionManager.sendFailed(taskId, e.getMessage(), e.getErrorCode().getCode());
+            } catch (Exception wsEx) {
+                log.debug("WebSocket failed notification error (non-critical): {}", wsEx.getMessage());
+            }
+
+        } catch (Exception e) {
+            log.error("Pipeline failed unexpectedly for meeting {}: {}", meetingId, e.getMessage());
+            taskService.markFailed(taskId, e.getMessage(), ErrorCode.UNKNOWN_ERROR);
+            meetingService.updateStatus(meetingId, MeetingStatus.FAILED);
+            try {
+                Meeting m = meetingService.findByIdOrThrow(meetingId);
+                m.setErrorMessage(e.getMessage());
+            } catch (Exception ignored) {}
+
+            // Send WebSocket failed event
+            try {
+                wsSessionManager.sendFailed(taskId, e.getMessage(), ErrorCode.UNKNOWN_ERROR.getCode());
+            } catch (Exception wsEx) {
+                log.debug("WebSocket failed notification error (non-critical): {}", wsEx.getMessage());
+            }
         }
     }
 
@@ -139,7 +229,26 @@ public class PipelineService {
             status = TaskStatus.COMPLETED;
         }
 
+        // Write to DB (source of truth)
         taskService.updateProgress(taskId, stage, totalProgress, status);
+
+        // Push via WebSocket (best-effort, non-blocking)
+        try {
+            wsSessionManager.sendProgress(taskId, stage, totalProgress);
+        } catch (Exception e) {
+            log.debug("WebSocket progress push failed (non-critical): {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 检查全局超时。如果总耗时超过配置的全局超时时间，抛出 PIPELINE_TIMEOUT。
+     */
+    private void checkGlobalTimeout(long startTimeMs, int globalTimeoutSec) {
+        long elapsed = (System.currentTimeMillis() - startTimeMs) / 1000;
+        if (elapsed > globalTimeoutSec) {
+            throw new PipelineException(ErrorCode.PIPELINE_TIMEOUT,
+                    "Pipeline exceeded global timeout of " + globalTimeoutSec + "s (elapsed: " + elapsed + "s)");
+        }
     }
 
     public record PipelineStartEvent(String meetingId, String taskId) {}

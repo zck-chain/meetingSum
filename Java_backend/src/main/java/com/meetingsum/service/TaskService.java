@@ -2,6 +2,7 @@ package com.meetingsum.service;
 
 import com.meetingsum.model.dto.TaskStatusResponse;
 import com.meetingsum.model.entity.Task;
+import com.meetingsum.model.enums.ErrorCode;
 import com.meetingsum.model.enums.TaskStage;
 import com.meetingsum.model.enums.TaskStatus;
 import com.meetingsum.repository.TaskRepository;
@@ -49,7 +50,9 @@ public class TaskService {
                 task.getStatus() != null ? task.getStatus().getValue() : null,
                 task.getResultPath(),
                 task.getCreatedAt() != null ? task.getCreatedAt().format(ISO_FORMAT) : null,
-                task.getCompletedAt() != null ? task.getCompletedAt().format(ISO_FORMAT) : null
+                task.getCompletedAt() != null ? task.getCompletedAt().format(ISO_FORMAT) : null,
+                task.getErrorCode(),
+                task.getErrorMessage()
         );
     }
 
@@ -74,9 +77,17 @@ public class TaskService {
 
     @Transactional
     public void markFailed(String taskId, String errorMessage) {
+        markFailed(taskId, errorMessage, ErrorCode.UNKNOWN_ERROR);
+    }
+
+    @Transactional
+    public void markFailed(String taskId, String errorMessage, ErrorCode errorCode) {
         Task task = findByIdOrThrow(taskId);
         task.setStage(TaskStage.FAILED);
         task.setStatus(TaskStatus.FAILED);
+        task.setErrorCode(errorCode != null ? errorCode.getCode() : ErrorCode.UNKNOWN_ERROR.getCode());
+        task.setErrorMessage(errorMessage);
+        task.setCompletedAt(LocalDateTime.now());
         taskRepository.save(task);
     }
 

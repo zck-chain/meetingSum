@@ -10,5 +10,7 @@ public record TaskStatusResponse(
         String status,
         @JsonProperty("result_path") String resultPath,
         @JsonProperty("created_at") String createdAt,
-        @JsonProperty("completed_at") String completedAt
+        @JsonProperty("completed_at") String completedAt,
+        @JsonProperty("error_code") String errorCode,
+        @JsonProperty("error_detail") String errorDetail
 ) {}

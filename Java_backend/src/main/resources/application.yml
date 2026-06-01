@@ -41,7 +41,7 @@ app:
   llm-provider: deepseek
   anthropic-api-key: ""
   anthropic-model: claude-sonnet-4-6
-  deepseek-api-key: sk-b4ea2f4706a44b7da25a51fdaac86539
+  deepseek-api-key: ${DEEPSEEK_API_KEY:}
   deepseek-model: deepseek-chat
   deepseek-base-url: https://api.deepseek.com
 
@@ -54,4 +54,21 @@ app:
 
   upload-dir: ./uploads
   output-dir: ./outputs
+
+  # ---- Phase 2: 摘要模板 ----
+  summary-template: ""
+
+  # ---- Phase 2: pyannote 说话人分离 ----
+  pyannote-enabled: false
+  pyannote-script-path: pyannote_diarize.py
+  pyannote-device: cpu
+  pyannote-hf-token: ""
+
+  # ---- Phase 2: 超时控制（秒） ----
+  timeout:
+    global-seconds: 1800
+    audio-extraction-seconds: 600
+    transcription-seconds: 1200
+    summarization-seconds: 300
+    export-seconds: 60
 

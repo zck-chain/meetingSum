@@ -25,7 +25,7 @@ MeetingSum 后端提供两套实现，API 路径和响应格式完全一致，�
 | 异步处理 | Spring @Async | 线程池异步执行 AI 管道 |
 | 语音识别 | OpenAI Whisper (Python 子进程) | 通过 `ProcessBuilder` 调用 Python 脚本 |
 
-### 2.2 已完成的模块（39 个源文件）
+### 2.2 已完成的模块（49 个源文件）
 
 | 层级 | 文件 | 说明 |
 |------|------|------|
@@ -44,7 +44,7 @@ MeetingSum 后端提供两套实现，API 路径和响应格式完全一致，�
 | **DTO** | `dto/UploadResponse.java` | 上传响应 `{meetingId, taskId, filename, status}` |
 | | `dto/MeetingListResponse.java` | 分页列表 `{items, total, page, page_size}` |
 | | `dto/MeetingDetailResponse.java` | 详情含 summary / transcript |
-| | `dto/TaskStatusResponse.java` | 任务进度 `{stage, progress, status}` |
+| | `dto/TaskStatusResponse.java` | 任务进度，含 `error_code` / `error_detail` |
 | | `dto/SummaryData.java` | 结构化摘要 POJO |
 | | `dto/DeleteResponse.java`、`dto/HealthResponse.java` | 通用响应 |
 | **枚举** | `enums/MeetingStatus.java` | PENDING / PROCESSING / COMPLETED / FAILED |
@@ -64,6 +64,12 @@ MeetingSum 后端提供两套实现，API 路径和响应格式完全一致，�
 | **工具** | `util/IdGenerator.java` | 32 位随机 ID 生成 |
 | | `util/FileValidationUtils.java` | 格式白名单校验 |
 | **脚本** | `whisper_transcribe.py` | Whisper 转写桥接脚本，stdout 输出 JSON |
+| | `pyannote_diarize.py` | pyannote-audio 说话人分离桥接脚本 |
+| **WebSocket** | `config/WebSocketConfig.java` | 注册 `/ws/tasks/{taskId}` WebSocket 端点 |
+| | `websocket/TaskProgressWebSocketHandler.java` | WebSocket 连接/断开管理 |
+| | `websocket/WebSocketSessionManager.java` | 按 taskId 管理会话，广播进度/完成/失败消息 |
+| **错误处理** | `enums/ErrorCode.java` | 13 个结构化错误码，按阶段前缀分组 |
+| | `pipeline/PipelineException.java` | 携带 ErrorCode 的自定义运行时异常 |
 
 ### 2.3 与 doc.md 的对照
 
@@ -85,14 +91,32 @@ MeetingSum 后端提供两套实现，API 路径和响应格式完全一致，�
 | 异步处理 | ✅ 已实现（Spring @Async） |
 | 任务进度回调 | ✅ 已实现 |
 | 错误处理 | ✅ 已实现（GlobalExceptionHandler） |
-| WebSocket 实时推送 | ❌ 未实现 |
+| WebSocket 实时推送 | ✅ 已实现（Phase 2） |
 | 用户认证 | ❌ 未实现 |
 
 ---
 
-## 三、近期变更记录（2026-05-28）
+## 三、近期变更记录
 
-### 3.1 联调修复
+### 3.3 Phase 2 功能增强（2026-06-01）
+
+| 功能 | 说明 |
+|------|------|
+| **说话人分离升级** | 新增 `pyannote_diarize.py` Python 桥接脚本，支持 pyannote-audio ML 说话人分离。`Diarizer.java` 新增 `assignSpeakersWithAudio()` 方法，失败自动降级回启发式规则。配置项 `app.pyannote-*`。 |
+| **WebSocket 进度推送** | 新增 `WebSocketConfig`、`TaskProgressWebSocketHandler`、`WebSocketSessionManager`。`/ws/tasks/{taskId}` 端点实时推送进度/完成/失败事件。`PipelineService.emitProgress()` 并行推送 WebSocket 消息。前端 `vite.config.ts` 添加 `/ws` 代理。 |
+| **摘要模板自定义** | `PUT /api/v1/meetings/{id}/template` 新增端点。三级优先级：会议级 > YAML `app.summary-template` > 硬编码默认。`Meeting` 实体新增 `customSummaryTemplate` 字段。 |
+| **错误处理增强** | 新增 `ErrorCode` 枚举（13 个错误码）和 `PipelineException`。`PipelineService.runPipeline()` 拆分为每阶段独立 try-catch。`Task` 实体新增 `errorCode`/`errorMessage` 字段。`TaskStatusResponse` 新增 `error_code`/`error_detail` 字段。 |
+| **超时控制** | 新增 `AppProperties.TimeoutConfig` 嵌套配置类。`application.yml` 新增 `app.timeout.*` 可配置每阶段超时。`PipelineService` 新增全局超时检查。`AudioExtractor`/`TranscriberService`/`SummarizerService` 使用配置的超时替代硬编码值。 |
+
+### 3.2 关键设计决策
+
+1. **FFmpeg 路径可配置**：不依赖系统 PATH，通过 `application.yml` 显式指定完整路径，Windows 和 Linux 均可适配
+2. **Whisper 通过 Python 子进程调用**：Java 侧用 `ProcessBuilder` 启动独立 Python 进程，避免 JNI 复杂度
+3. **编码兼容**：中英文 Windows 环境下保持平台默认编码一致性，避免强制 UTF-8 导致的性能或兼容问题
+4. **说话人分离双轨制**：pyannote-audio 提供 ML 级别的说话人分离，失败时自动降级为基于停顿间隔（> 2s）的启发性规则
+5. **H2 文件数据库**：免安装，数据文件在 `./data/` 目录，支持 Hibernate `ddl-auto: update` 自动建表
+
+### 3.1 联调修复（2026-05-28）
 
 | 问题 | 根因 | 修复 |
 |------|------|------|
@@ -101,14 +125,6 @@ MeetingSum 后端提供两套实现，API 路径和响应格式完全一致，�
 | Whisper 找不到 ffmpeg | Python 子进程未继承 PATH | `ProcessBuilder.environment().put("PATH", ...)` 注入 ffmpeg 目录 |
 | JSON 解析失败 | Whisper `transcribe()` 往 stdout 打印 "Detected..." | Python 脚本 `redirect_stdout(devnull)` 屏蔽干扰输出 |
 | 中文乱码 | Windows Python stdout 默认 GBK，Java 侧读取不一致 | 回退为 Java `new String(bytes)` 默认编码与 Python GBK 一致 |
-
-### 3.2 关键设计决策
-
-1. **FFmpeg 路径可配置**：不依赖系统 PATH，通过 `application.yml` 显式指定完整路径，Windows 和 Linux 均可适配
-2. **Whisper 通过 Python 子进程调用**：Java 侧用 `ProcessBuilder` 启动独立 Python 进程，避免 JNI 复杂度
-3. **编码兼容**：中英文 Windows 环境下保持平台默认编码一致性，避免强制 UTF-8 导致的性能或兼容问题
-4. **说话人分离降级**：pyannote-audio 需额外依赖，当前用基于停顿间隔（> 2s）的启发性规则
-5. **H2 文件数据库**：免安装，数据文件在 `./data/` 目录，支持 Hibernate `ddl-auto: update` 自动建表
 
 ---
 
@@ -139,8 +155,10 @@ Python 版后端位于 `backend/` 目录，基于 FastAPI + Celery + SQLAlchemy�
 | `GET` | `/api/v1/meetings/{id}` | 会议详情（含 summary_json + transcript_text） |
 | `DELETE` | `/api/v1/meetings/{id}` | 删除会议及关联文件 |
 | `GET` | `/api/v1/tasks/{id}/status` | 任务进度 `{stage, progress, status}` |
+| `PUT` | `/api/v1/meetings/{id}/template` | 设置摘要模板（请求体 `{"template": "..."}` ) |
 | `GET` | `/api/v1/meetings/{id}/export?format=md` | 导出 Markdown |
 | `GET` | `/api/v1/meetings/{id}/export?format=docx` | 导出 Word |
+| `WS` | `/ws/tasks/{id}` | WebSocket 实时进度推送 |
 
 ---
 
@@ -148,11 +166,11 @@ Python 版后端位于 `backend/` 目录，基于 FastAPI + Celery + SQLAlchemy�
 
 ### Phase 2：功能增强
 
-- [ ] **说话人分离升级**：集成 pyannote-audio 替换启发性规则（Java 版也需对应更新）
-- [ ] **WebSocket 进度推送**：实时推送处理阶段和百分比，前端替换轮询
-- [ ] **摘要模板自定义**：用户可自定义 System Prompt 模板
-- [ ] **错误处理增强**：细分错误码（音频损坏、转写失败、LLM 超时），前端差异化展示
-- [ ] **处理超时控制**：全局超时 + 各阶段超时独立配置
+- [x] **说话人分离升级**：集成 pyannote-audio 替换启发性规则（✅ 2026-06-01）
+- [x] **WebSocket 进度推送**：实时推送处理阶段和百分比，前端替换轮询（✅ 2026-06-01）
+- [x] **摘要模板自定义**：用户可自定义 System Prompt 模板（✅ 2026-06-01）
+- [x] **错误处理增强**：细分错误码（音频损坏、转写失败、LLM 超时），前端差异化展示（✅ 2026-06-01）
+- [x] **处理超时控制**：全局超时 + 各阶段超时独立配置（✅ 2026-06-01）
 
 ### Phase 3：体验优化
 

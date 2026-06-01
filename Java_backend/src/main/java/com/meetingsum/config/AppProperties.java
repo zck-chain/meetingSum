@@ -34,6 +34,18 @@ public class AppProperties {
     private String uploadDir = "./uploads";
     private String outputDir = "./outputs";
 
+    // ---- Phase 2: 摘要模板 ----
+    private String summaryTemplate = "";
+
+    // ---- Phase 2: pyannote 说话人分离 ----
+    private boolean pyannoteEnabled = false;
+    private String pyannoteScriptPath = "pyannote_diarize.py";
+    private String pyannoteDevice = "cpu";
+    private String pyannoteHfToken = "";
+
+    // ---- Phase 2: 超时控制 ----
+    private TimeoutConfig timeout = new TimeoutConfig();
+
     public long getMaxFileSizeBytes() {
         return (long) maxFileSizeMb * 1024 * 1024;
     }
@@ -42,7 +54,37 @@ public class AppProperties {
         return Arrays.asList(allowedFormats.split(","));
     }
 
-    // Getters and setters
+    // ---- 嵌套类：超时配置 ----
+
+    public static class TimeoutConfig {
+        /** 全局管道超时（秒），默认 30 分钟 */
+        private int globalSeconds = 1800;
+        /** FFmpeg 音频提取超时 */
+        private int audioExtractionSeconds = 600;
+        /** Whisper 转写超时 */
+        private int transcriptionSeconds = 1200;
+        /** LLM 摘要超时 */
+        private int summarizationSeconds = 300;
+        /** 文档导出超时 */
+        private int exportSeconds = 60;
+
+        public int getGlobalSeconds() { return globalSeconds; }
+        public void setGlobalSeconds(int globalSeconds) { this.globalSeconds = globalSeconds; }
+
+        public int getAudioExtractionSeconds() { return audioExtractionSeconds; }
+        public void setAudioExtractionSeconds(int audioExtractionSeconds) { this.audioExtractionSeconds = audioExtractionSeconds; }
+
+        public int getTranscriptionSeconds() { return transcriptionSeconds; }
+        public void setTranscriptionSeconds(int transcriptionSeconds) { this.transcriptionSeconds = transcriptionSeconds; }
+
+        public int getSummarizationSeconds() { return summarizationSeconds; }
+        public void setSummarizationSeconds(int summarizationSeconds) { this.summarizationSeconds = summarizationSeconds; }
+
+        public int getExportSeconds() { return exportSeconds; }
+        public void setExportSeconds(int exportSeconds) { this.exportSeconds = exportSeconds; }
+    }
+
+    // ---- Getters and setters ----
 
     public String getAppName() { return appName; }
     public void setAppName(String appName) { this.appName = appName; }
@@ -103,4 +145,24 @@ public class AppProperties {
 
     public String getFfprobePath() { return ffprobePath; }
     public void setFfprobePath(String ffprobePath) { this.ffprobePath = ffprobePath; }
+
+    // ---- Phase 2 getters/setters ----
+
+    public String getSummaryTemplate() { return summaryTemplate; }
+    public void setSummaryTemplate(String summaryTemplate) { this.summaryTemplate = summaryTemplate; }
+
+    public boolean isPyannoteEnabled() { return pyannoteEnabled; }
+    public void setPyannoteEnabled(boolean pyannoteEnabled) { this.pyannoteEnabled = pyannoteEnabled; }
+
+    public String getPyannoteScriptPath() { return pyannoteScriptPath; }
+    public void setPyannoteScriptPath(String pyannoteScriptPath) { this.pyannoteScriptPath = pyannoteScriptPath; }
+
+    public String getPyannoteDevice() { return pyannoteDevice; }
+    public void setPyannoteDevice(String pyannoteDevice) { this.pyannoteDevice = pyannoteDevice; }
+
+    public String getPyannoteHfToken() { return pyannoteHfToken; }
+    public void setPyannoteHfToken(String pyannoteHfToken) { this.pyannoteHfToken = pyannoteHfToken; }
+
+    public TimeoutConfig getTimeout() { return timeout; }
+    public void setTimeout(TimeoutConfig timeout) { this.timeout = timeout; }
 }

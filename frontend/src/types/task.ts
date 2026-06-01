@@ -15,6 +15,8 @@ export interface Task {
   result_path: string | null
   created_at: string
   completed_at: string | null
+  error_code?: string
+  error_detail?: string
 }
 
 export interface ProgressEvent {

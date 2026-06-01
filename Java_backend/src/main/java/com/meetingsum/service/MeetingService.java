@@ -130,6 +130,13 @@ public class MeetingService {
         meetingRepository.save(meeting);
     }
 
+    @Transactional
+    public void updateSummaryTemplate(String meetingId, String template) {
+        Meeting meeting = findByIdOrThrow(meetingId);
+        meeting.setCustomSummaryTemplate(template);
+        meetingRepository.save(meeting);
+    }
+
     private MeetingDetailResponse toDetailResponse(Meeting m) {
         SummaryData summaryJson = null;
         if (m.getSummaryJson() != null && !m.getSummaryJson().isBlank()) {
